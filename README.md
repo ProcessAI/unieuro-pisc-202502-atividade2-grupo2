@@ -20,8 +20,7 @@ Gerencia **alunos, professores, salas e registros de uso**.
 ## 🛠️ Requisitos
 - Python 3.10+
 - PostgreSQL 14+
-- Bibliotecas Python (veja `requirements.txt`)
+- Bibliotecas Python
 
-Instale as dependências com:
-```bash
-pip install -r requirements.txt
+
+
