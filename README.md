@@ -115,4 +115,4 @@ set PGPASSWORD=123456
 & "C:\Program Files\PostgreSQL\14\bin\psql.exe" -U postgres -h localhost -p 5432 -d postgres -f ".\backup.sql"
 
 6. Executar o app
-python app_gui.py
+python index.py
