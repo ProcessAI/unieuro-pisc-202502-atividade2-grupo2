@@ -37,3 +37,21 @@ Instale com **pip**:
 
 ```bash
 pip install "sqlalchemy[postgresql]" psycopg[binary] bcrypt
+```
+
+## ⚙️ Configuração do Banco de Dados
+Criar banco (pgAdmin)
+
+Abra o pgAdmin e conecte em localhost:5432.
+
+Clique direito em Databases → Create → Database….
+
+Nome: cadastro_academico.
+
+Criar banco (linha de comando — Windows/PowerShell)
+set PGPASSWORD=123456
+& "C:\Program Files\PostgreSQL\14\bin\createdb.exe" -U postgres -h localhost -p 5432 cadastro_academico
+
+Criar banco (Linux/macOS)
+createdb -U postgres -h localhost -p 5432 cadastro_academico
+
