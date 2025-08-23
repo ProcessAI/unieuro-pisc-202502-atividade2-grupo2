@@ -85,7 +85,7 @@ class Aluno(Base):
 class Professor(Base):
     __tablename__ = "professor"
     id_professor: Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario", ondelete="CASCADE"), primary_key=True)
-    disciplina:   Mapped[str] = mapped_column(String(120), nullable=False)
+    # Sem 'disciplina'
     usuario: Mapped["Usuario"] = relationship(back_populates="professor")
 
 class Registro(Base):
@@ -94,8 +94,8 @@ class Registro(Base):
     id_usuario:    Mapped[int] = mapped_column(ForeignKey("usuario.id_usuario", ondelete="CASCADE"), nullable=False)
     id_sala:       Mapped[int] = mapped_column(ForeignKey("sala.id_sala", ondelete="CASCADE"), nullable=False)
     data_registro: Mapped[date] = mapped_column(Date, nullable=False)
-
     __table_args__ = (UniqueConstraint("id_usuario", "id_sala", "data_registro", name="uq_registro"),)
+
     usuario: Mapped["Usuario"] = relationship(back_populates="registros")
     sala:    Mapped["Sala"]    = relationship(back_populates="registros")
 
@@ -121,21 +121,21 @@ def get_or_create_usuario_aluno(nome: str, email: str, senha_plana: str, matricu
         s.add(u); s.flush(); s.refresh(u)
         return u, True
 
-def get_or_create_usuario_professor(nome: str, email: str, senha_plana: str, disciplina: str) -> Tuple[Usuario, bool]:
+def get_or_create_usuario_professor(nome: str, email: str, senha_plana: str) -> Tuple[Usuario, bool]:
+    """Agora professor não tem 'disciplina'."""
     with get_session() as s:
         u = s.scalar(select(Usuario).where(Usuario.email == email))
         if u:
             created = False
             if u.tipo != "professor": u.tipo = "professor"
-            if u.professor is None: u.professor = Professor(disciplina=disciplina)
+            if u.professor is None: u.professor = Professor()
             return u, created
         u = Usuario(nome=nome, email=email, senha=hash_senha_bcrypt(senha_plana), tipo="professor",
-                    professor=Professor(disciplina=disciplina))
+                    professor=Professor())
         s.add(u); s.flush(); s.refresh(u)
         return u, True
 
 def criar_usuario_admin(nome: str, email: str, senha_plana: str) -> Tuple[Usuario, bool]:
-    """Cria usuário tipo admin (ou retorna existente)."""
     with get_session() as s:
         u = s.scalar(select(Usuario).where(Usuario.email == email))
         if u:
@@ -145,7 +145,6 @@ def criar_usuario_admin(nome: str, email: str, senha_plana: str) -> Tuple[Usuari
         return u, True
 
 def atualizar_usuario_basico(id_usuario: int, nome: str, email: str, tipo: str, nova_senha: Optional[str] = None) -> bool:
-    """Atualiza campos básicos do usuário; nova_senha é opcional."""
     with get_session() as s:
         u = s.get(Usuario, id_usuario)
         if not u: return False
@@ -157,7 +156,6 @@ def atualizar_usuario_basico(id_usuario: int, nome: str, email: str, tipo: str, 
         return True
 
 def deletar_usuario(id_usuario: int) -> bool:
-    """Remove o usuário selecionado. Registros/Aluno/Professor são removidos por CASCADE."""
     with get_session() as s:
         u = s.get(Usuario, id_usuario)
         if not u: return False
@@ -215,7 +213,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Cadastro Acadêmico - PostgreSQL")
-        self.geometry("920x580")
+        self.geometry("960x600")
         self.resizable(False, False)
 
         nb = ttk.Notebook(self)
@@ -244,18 +242,16 @@ class App(tk.Tk):
         ttk.Button(top, text="Editar Selecionado", command=self.edit_selected_user).pack(side="left", padx=6)
         ttk.Button(top, text="Deletar Selecionado", command=self.delete_selected_user).pack(side="left", padx=6)
         ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=10)
-        ttk.Button(top, text="Adicionar Usuário (admin)", command=self.add_admin_user_modal).pack(side="left", padx=6)
+        ttk.Button(top, text="Adicionar Usuário", command=self.add_user_modal).pack(side="left", padx=6)
 
         cols = ("id", "nome", "email", "tipo")
         self.tree_users = ttk.Treeview(frm, columns=cols, show="headings", height=20)
         for c in cols:
             self.tree_users.heading(c, text=c)
-            self.tree_users.column(c, width=180 if c in ("nome", "email") else 80, anchor="center")
+            self.tree_users.column(c, width=220 if c in ("nome", "email") else 90, anchor="center")
         self.tree_users.pack(fill="both", expand=True, padx=6, pady=6)
 
-        # duplo clique abre editor
         self.tree_users.bind("<Double-1>", lambda _e: self.edit_selected_user())
-
         self.refresh_users()
 
     def refresh_users(self):
@@ -274,20 +270,79 @@ class App(tk.Tk):
             return None
         return int(self.tree_users.item(sel[0], "values")[0])
 
+    def add_user_modal(self):
+        win = tk.Toplevel(self); win.title("Adicionar Usuário"); win.resizable(False, False)
+        pad = dict(padx=8, pady=6, sticky="w")
+
+        ttk.Label(win, text="Nome").grid(row=0, column=0, **pad)
+        e_nome = ttk.Entry(win, width=40); e_nome.grid(row=0, column=1, **pad)
+
+        ttk.Label(win, text="Email").grid(row=1, column=0, **pad)
+        e_email = ttk.Entry(win, width=40); e_email.grid(row=1, column=1, **pad)
+
+        ttk.Label(win, text="Senha").grid(row=2, column=0, **pad)
+        e_senha = ttk.Entry(win, width=40, show="•"); e_senha.grid(row=2, column=1, **pad)
+
+        ttk.Label(win, text="Tipo").grid(row=3, column=0, **pad)
+        cb_tipo = ttk.Combobox(win, values=["aluno","professor","admin"], state="readonly", width=20)
+        cb_tipo.grid(row=3, column=1, **pad); cb_tipo.set("aluno")
+
+        # Campos condicionais (apenas matrícula para aluno; professor sem extra)
+        ttk.Label(win, text="Matrícula (somente aluno)").grid(row=4, column=0, **pad)
+        e_matricula = ttk.Entry(win, width=40); e_matricula.grid(row=4, column=1, **pad)
+
+        def toggle_extra(*_):
+            t = cb_tipo.get()
+            if t == "aluno":
+                e_matricula.grid()
+            else:
+                e_matricula.grid_remove()
+        toggle_extra()
+        cb_tipo.bind("<<ComboboxSelected>>", toggle_extra)
+
+        def salvar():
+            nome = e_nome.get().strip()
+            email = e_email.get().strip()
+            senha = e_senha.get().strip()
+            tipo  = cb_tipo.get().strip()
+            if not all([nome, email, senha, tipo]):
+                messagebox.showwarning("Campos", "Preencha nome, email, senha e tipo.")
+                return
+            try:
+                if tipo == "aluno":
+                    mat = e_matricula.get().strip()
+                    if not mat:
+                        messagebox.showwarning("Campos", "Informe a matrícula para alunos.")
+                        return
+                    _, created = get_or_create_usuario_aluno(nome, email, senha, mat)
+                elif tipo == "professor":
+                    _, created = get_or_create_usuario_professor(nome, email, senha)
+                else:
+                    _, created = criar_usuario_admin(nome, email, senha)
+
+                if created:
+                    messagebox.showinfo("Sucesso", "✅ Usuário adicionado!")
+                else:
+                    messagebox.showinfo("Informação", "ℹ️ Já existia um usuário com esse e-mail (atualizado se necessário).")
+
+                self.refresh_users()
+                self.refresh_user_sala()
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro", f"Falha ao adicionar usuário:\n{type(e).__name__}: {e}")
+
+        ttk.Button(win, text="Salvar", command=salvar).grid(row=5, column=1, sticky="e", padx=8, pady=10)
+
     def edit_selected_user(self):
         uid = self.get_selected_user_id()
-        if uid is None:
-            return
-        # busca dados atuais
+        if uid is None: return
         usuarios = {u.id_usuario: u for u in listar_usuarios()}
         u = usuarios.get(uid)
         if not u:
             messagebox.showerror("Erro", "Usuário não encontrado.")
             return
 
-        win = tk.Toplevel(self)
-        win.title(f"Editar Usuário #{uid}")
-        win.resizable(False, False)
+        win = tk.Toplevel(self); win.title(f"Editar Usuário #{uid}"); win.resizable(False, False)
         pad = dict(padx=8, pady=6, sticky="w")
 
         ttk.Label(win, text="Nome").grid(row=0, column=0, **pad)
@@ -316,7 +371,7 @@ class App(tk.Tk):
                 if ok:
                     messagebox.showinfo("Sucesso", "✅ Usuário atualizado!")
                     self.refresh_users()
-                    self.refresh_user_sala()  # atualiza combos da aba Registrar, se existirem
+                    self.refresh_user_sala()
                     win.destroy()
                 else:
                     messagebox.showerror("Erro", "Usuário não encontrado.")
@@ -340,42 +395,6 @@ class App(tk.Tk):
                 messagebox.showerror("Erro", "Usuário não encontrado.")
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao deletar usuário:\n{type(e).__name__}: {e}")
-
-    def add_admin_user_modal(self):
-        win = tk.Toplevel(self)
-        win.title("Adicionar Usuário (admin)")
-        win.resizable(False, False)
-        pad = dict(padx=8, pady=6, sticky="w")
-
-        ttk.Label(win, text="Nome").grid(row=0, column=0, **pad)
-        e_nome = ttk.Entry(win, width=40); e_nome.grid(row=0, column=1, **pad)
-
-        ttk.Label(win, text="Email").grid(row=1, column=0, **pad)
-        e_email = ttk.Entry(win, width=40); e_email.grid(row=1, column=1, **pad)
-
-        ttk.Label(win, text="Senha").grid(row=2, column=0, **pad)
-        e_senha = ttk.Entry(win, width=40, show="•"); e_senha.grid(row=2, column=1, **pad)
-
-        def salvar():
-            nome = e_nome.get().strip()
-            email = e_email.get().strip()
-            senha = e_senha.get().strip()
-            if not all([nome, email, senha]):
-                messagebox.showwarning("Campos", "Preencha todos os campos.")
-                return
-            try:
-                _, created = criar_usuario_admin(nome, email, senha)
-                if created:
-                    messagebox.showinfo("Sucesso", "✅ Usuário (admin) adicionado!")
-                else:
-                    messagebox.showinfo("Informação", "ℹ️ Já existia um usuário com esse e-mail.")
-                self.refresh_users()
-                self.refresh_user_sala()
-                win.destroy()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Falha ao adicionar admin:\n{type(e).__name__}: {e}")
-
-        ttk.Button(win, text="Salvar", command=salvar).grid(row=3, column=1, sticky="e", padx=8, pady=10)
 
     # --------- Adicionar Aluno ---------
     def build_tab_aluno(self):
@@ -422,30 +441,26 @@ class App(tk.Tk):
         ttk.Label(frm, text="Nome").grid(row=0, column=0, sticky="w", padx=6, pady=6)
         ttk.Label(frm, text="Email").grid(row=1, column=0, sticky="w", padx=6, pady=6)
         ttk.Label(frm, text="Senha").grid(row=2, column=0, sticky="w", padx=6, pady=6)
-        ttk.Label(frm, text="Disciplina").grid(row=3, column=0, sticky="w", padx=6, pady=6)
 
         self.p_nome = ttk.Entry(frm, width=40)
         self.p_email = ttk.Entry(frm, width=40)
         self.p_senha = ttk.Entry(frm, width=40, show="•")
-        self.p_disc  = ttk.Entry(frm, width=40)
 
         self.p_nome.grid(row=0, column=1, padx=6, pady=6)
         self.p_email.grid(row=1, column=1, padx=6, pady=6)
         self.p_senha.grid(row=2, column=1, padx=6, pady=6)
-        self.p_disc.grid(row=3, column=1, padx=6, pady=6)
 
-        ttk.Button(frm, text="Salvar Professor", command=self.on_save_prof).grid(row=4, column=1, sticky="e", padx=6, pady=12)
+        ttk.Button(frm, text="Salvar Professor", command=self.on_save_prof).grid(row=3, column=1, sticky="e", padx=6, pady=12)
 
     def on_save_prof(self):
         nome = self.p_nome.get().strip()
         email = self.p_email.get().strip()
         senha = self.p_senha.get().strip()
-        disciplina = self.p_disc.get().strip()
-        if not all([nome, email, senha, disciplina]):
+        if not all([nome, email, senha]):
             messagebox.showwarning("Campos obrigatórios", "Preencha todos os campos.")
             return
         try:
-            _, created = get_or_create_usuario_professor(nome, email, senha, disciplina)
+            _, created = get_or_create_usuario_professor(nome, email, senha)
             if created:
                 messagebox.showinfo("Sucesso", "✅ Professor adicionado com sucesso!")
             else:
